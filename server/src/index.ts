@@ -31,6 +31,7 @@ import listingRoutes from "./routes/listing.routes";
 import wishlistRoutes from "./routes/wishlist.routes";
 import reportRoutes from "./routes/report.routes";
 import matchRoutes from "./routes/match.routes";
+import communityIssueRoutes from "./routes/community-issues.routes";
 
 const app = express();
 app.set("trust proxy", 1);
@@ -161,6 +162,7 @@ app.use("/api/found", foundRoutes);
 app.use("/api/matches", matchRoutes);
 app.use("/api/listings", listingRoutes);
 app.use("/api/wishlist", wishlistRoutes);
+app.use("/api/community-issues", communityIssueRoutes);
 app.use("/api", reportRoutes); // handles /api/reports, /api/admin/reports, /api/admin/posts/:type/:id, /api/admin/users/:id/ban, /api/admin/analytics
 
 // 404 handler
