@@ -1,0 +1,347 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ─── Enums ───────────────────────────────────────────────────────────────────
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum RideStatus {
+  OPEN
+  FULL
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum NotificationType {
+  MATCH
+  CLAIM
+  CHAT
+  RIDE
+  SYSTEM
+}
+
+// ─── User ────────────────────────────────────────────────────────────────────
+
+model User {
+  id         String   @id @default(uuid())
+  email      String   @unique
+  name       String
+  department String?
+  year       String?
+  phone      String?
+  avatarUrl  String?
+  role       UserRole @default(USER)
+  isBanned   Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  lostItems               LostItem[]
+  foundItems              FoundItem[]              @relation("FoundReported")
+  claimedFoundItems       FoundItem[]              @relation("ClaimedFoundItems")
+  trainTrips              TrainTrip[]
+  createdRides            Ride[]                   @relation("CreatedRides")
+  rideMemberships         RideMember[]
+  listings                Listing[]
+  wishlists               Wishlist[]
+  sentMessages            Message[]
+  notifications           Notification[]
+  notificationPreference  NotificationPreference?
+  filedReports            Report[]                 @relation("Reporter")
+  conversationMemberships ConversationMember[]
+
+  @@index([role])
+  @@index([isBanned])
+}
+
+// ─── Auth ────────────────────────────────────────────────────────────────────
+
+model OtpToken {
+  id        String   @id @default(uuid())
+  email     String
+  otpHash   String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([email])
+}
+
+// ─── Lost & Found ─────────────────────────────────────────────────────────────
+
+model LostItem {
+  id                 String   @id @default(uuid())
+  userId             String
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title              String
+  description        String
+  category           String
+  location           String
+  dateLost           DateTime
+  imageUrl           String?
+  status             String   @default("open") // "open", "reunited", "closed"
+  matchedFoundItemId String?
+  isExpired          Boolean  @default(false)
+  expiresAt          DateTime
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  matches            Match[]
+
+  @@index([userId])
+  @@index([category, status])
+  @@index([status, isExpired])
+  @@index([dateLost])
+  @@index([createdAt])
+}
+
+model FoundItem {
+  id              String   @id @default(uuid())
+  userId          String
+  user            User     @relation("FoundReported", fields: [userId], references: [id], onDelete: Cascade)
+  title           String
+  description     String
+  category        String
+  location        String
+  dateFound       DateTime
+  imageUrl        String?
+  holdingLocation String   @default("with finder") // "with finder", "security office", "department"
+  secretQuestion  String   @default("What is a unique distinguishing feature?")
+  secretAnswer    String   // bcrypt-hashed answer
+  status          String   @default("open") // "open", "reunited"
+  claimedByUserId String?
+  claimedByUser   User?    @relation("ClaimedFoundItems", fields: [claimedByUserId], references: [id])
+  claimNote       String?
+  isExpired       Boolean  @default(false)
+  expiresAt       DateTime
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  matches         Match[]
+
+  @@index([userId])
+  @@index([category, status])
+  @@index([status, isExpired])
+  @@index([dateFound])
+  @@index([createdAt])
+}
+
+model Match {
+  id          String    @id @default(uuid())
+  lostItemId  String
+  lostItem    LostItem  @relation(fields: [lostItemId], references: [id], onDelete: Cascade)
+  foundItemId String
+  foundItem   FoundItem @relation(fields: [foundItemId], references: [id], onDelete: Cascade)
+  score       Float
+  reasons     String[]
+  status      String    @default("PENDING") // "PENDING", "ACCEPTED", "DISMISSED"
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([lostItemId, foundItemId])
+  @@index([lostItemId])
+  @@index([foundItemId])
+  @@index([score])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// ─── Train Buddy Radar ────────────────────────────────────────────────────────
+// PNR and seat number must NOT be stored.
+
+model TrainTrip {
+  id            String   @id @default(uuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  trainNumber   String
+  trainName     String?
+  date          String
+  fromStation   String
+  toStation     String
+  departureTime String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([userId])
+  @@index([trainNumber, date])
+  @@index([fromStation, toStation])
+}
+
+// ─── Ride Sharing ─────────────────────────────────────────────────────────────
+
+model Ride {
+  id             String        @id @default(uuid())
+  creatorId      String
+  creator        User          @relation("CreatedRides", fields: [creatorId], references: [id], onDelete: Cascade)
+  origin         String
+  destination    String
+  departureTime  DateTime
+  totalSeats     Int
+  availableSeats Int
+  estimatedFare  Float
+  status         RideStatus    @default(OPEN)
+  notes          String?
+  members        RideMember[]
+  conversation   Conversation?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@index([creatorId])
+  @@index([status])
+  @@index([origin, destination])
+  @@index([departureTime])
+}
+
+model RideMember {
+  id       String   @id @default(uuid())
+  rideId   String
+  ride     Ride     @relation(fields: [rideId], references: [id], onDelete: Cascade)
+  userId   String
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  joinedAt DateTime @default(now())
+
+  @@unique([rideId, userId])
+  @@index([rideId])
+  @@index([userId])
+}
+
+// ─── Marketplace ──────────────────────────────────────────────────────────────
+
+model Listing {
+  id          String     @id @default(uuid())
+  sellerId    String
+  seller      User       @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  title       String
+  description String
+  price       Float
+  category    String
+  condition   String     @default("used") // "new", "like new", "used"
+  imageUrls   String[]
+  status      String     @default("available") // "available", "reserved", "sold"
+  isExpired   Boolean    @default(false)
+  expiresAt   DateTime
+  wishlists   Wishlist[]
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@index([sellerId])
+  @@index([category, status])
+  @@index([status, isExpired])
+  @@index([price])
+  @@index([createdAt])
+}
+
+model Wishlist {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  listingId String
+  listing   Listing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, listingId])
+  @@index([userId])
+  @@index([listingId])
+}
+
+// ─── Chat ─────────────────────────────────────────────────────────────────────
+
+model Conversation {
+  id        String               @id @default(uuid())
+  isGroup   Boolean              @default(false)
+  title     String?
+  rideId    String?              @unique
+  ride      Ride?                @relation(fields: [rideId], references: [id], onDelete: Cascade)
+  members   ConversationMember[]
+  messages  Message[]
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+}
+
+model ConversationMember {
+  id             String       @id @default(uuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  joinedAt       DateTime     @default(now())
+
+  @@unique([conversationId, userId])
+  @@index([conversationId])
+  @@index([userId])
+}
+
+model Message {
+  id             String       @id @default(uuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderId       String
+  sender         User         @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  content        String
+  createdAt      DateTime     @default(now())
+
+  @@index([conversationId, createdAt])
+  @@index([senderId])
+}
+
+// ─── Notifications ────────────────────────────────────────────────────────────
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  message   String
+  type      NotificationType @default(SYSTEM)
+  link      String?
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  @@index([userId, isRead])
+  @@index([userId, createdAt])
+}
+
+model NotificationPreference {
+  id                  String   @id @default(uuid())
+  userId              String   @unique
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emailMatches        Boolean  @default(true)
+  emailRideJoins      Boolean  @default(true)
+  emailMessages       Boolean  @default(true)
+  whatsappMatches     Boolean  @default(false)
+  whatsappRideJoins   Boolean  @default(false)
+  whatsappMessages    Boolean  @default(false)
+  whatsappNumber      String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([userId])
+}
+
+// ─── Reports / Moderation ─────────────────────────────────────────────────────
+
+model Report {
+  id         String   @id @default(uuid())
+  reporterId String
+  reporter   User     @relation("Reporter", fields: [reporterId], references: [id], onDelete: Cascade)
+  targetType String   // "LISTING", "LOST_ITEM", "FOUND_ITEM", "USER", "RIDE"
+  targetId   String
+  reason     String
+  details    String?
+  status     String   @default("pending") // "pending", "reviewed", "dismissed"
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([reporterId])
+  @@index([status])
+  @@index([targetType, targetId])
+  @@index([createdAt])
+}
