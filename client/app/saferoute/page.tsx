@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { useAuth } from "@/lib/auth-context";
 import Link from "next/link";
 import {
   MapPin,
@@ -38,6 +39,7 @@ import {
   createSafetyReport,
   updateReportStatus,
   verifyReport,
+  uploadSafetyImage,
 } from "@/lib/safety-reports";
 
 const CATEGORIES: SafetyConcernCategory[] = [
@@ -45,10 +47,16 @@ const CATEGORIES: SafetyConcernCategory[] = [
   "Broken streetlight",
   "Road hazard",
   "Harassment concern",
+  "Pothole",
+  "Garbage",
+  "Damaged footpath",
+  "Unsafe crossing",
   "Other",
 ];
 
 export default function SafeRoutePage() {
+  const { user, isAuthenticated } = useAuth();
+  const isAdmin = user?.role === "ADMIN";
   const [reports, setReports] = useState<SafetyConcernReport[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
@@ -57,6 +65,7 @@ export default function SafeRoutePage() {
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [category, setCategory] = useState<SafetyConcernCategory>("Poor lighting");
   const [description, setDescription] = useState("");
+  const [imageFile, setImageFile] = useState<File | null>(null);
   const [locationName, setLocationName] = useState("");
   const [coordinates, setCoordinates] = useState<[number, number]>([75.8321, 25.0499]);
   const [formError, setFormError] = useState<string | null>(null);
@@ -163,11 +172,17 @@ export default function SafeRoutePage() {
 
     try {
       setIsSubmitting(true);
+      if (!isAuthenticated) {
+        setFormError("Please sign in to submit a community issue.");
+        return;
+      }
+      const imageUrl = imageFile ? await uploadSafetyImage(imageFile) : null;
       const newReport = await createSafetyReport({
         category,
         description,
         locationName,
         coordinates,
+        imageUrl,
       });
 
       setReports((prev) => [newReport, ...prev]);
@@ -178,6 +193,7 @@ export default function SafeRoutePage() {
       setSearchQuery("");
       setFormSuccess("Safety concern report submitted to the community map.");
       setDescription("");
+      setImageFile(null);
       setLocationName("");
       setTimeout(() => {
         setShowSubmitModal(false);
@@ -337,6 +353,17 @@ export default function SafeRoutePage() {
                   />
                 </div>
 
+                <div className="space-y-1.5">
+                  <label className="font-bold text-slate-700 dark:text-slate-300">Photo (optional)</label>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp,image/gif"
+                    onChange={(e) => setImageFile(e.target.files?.[0] || null)}
+                    className="block w-full text-xs text-slate-600 dark:text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-sky-50 file:px-3 file:py-2 file:font-bold file:text-sky-700 hover:file:bg-sky-100"
+                  />
+                  <p className="text-[10px] text-slate-400">JPEG, PNG, WEBP or GIF. Maximum 5 MB.</p>
+                </div>
+
                 {/* Location Selection & Manual Entry */}
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
@@ -434,6 +461,7 @@ export default function SafeRoutePage() {
               <option value="all">All Statuses</option>
               <option value="Unverified">Unverified</option>
               <option value="Verified">Verified</option>
+              <option value="In Progress">In Progress</option>
               <option value="Resolved">Resolved</option>
             </select>
 
@@ -526,6 +554,10 @@ export default function SafeRoutePage() {
                       </StatusBadge>
                     </div>
 
+                    {report.imageUrl && (
+                      <img src={report.imageUrl} alt="Community reported issue" className="w-full h-32 object-cover rounded-xl border border-slate-200 dark:border-[#1E293B]" />
+                    )}
+
                     {/* Description */}
                     <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
                       {report.description}
@@ -549,6 +581,7 @@ export default function SafeRoutePage() {
                     {/* User Verification Action */}
                     <button
                       type="button"
+                      disabled={!isAuthenticated}
                       onClick={() => handleVerify(report.id)}
                       className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-[#0B0F19] hover:bg-slate-200 dark:hover:bg-[#1E293B] text-slate-700 dark:text-slate-300 font-bold text-xs flex items-center gap-1.5 transition-colors"
                       title="Confirm you also noticed this concern"
@@ -557,28 +590,22 @@ export default function SafeRoutePage() {
                       <span>Confirm ({report.verificationCount})</span>
                     </button>
 
-                    {/* Admin/User Resolution Action */}
-                    <div className="flex items-center gap-1.5">
-                      {report.status !== "Resolved" ? (
-                        <button
-                          type="button"
-                          onClick={() => handleSetStatus(report.id, "Resolved")}
-                          className="px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 font-bold text-xs flex items-center gap-1 transition-colors border border-emerald-200 dark:border-emerald-800/40"
+                    {/* Only administrators can update the official issue status. */}
+                    {isAdmin && (
+                      <div className="flex items-center gap-1.5">
+                        <select
+                          aria-label="Update issue status"
+                          value={report.status}
+                          onChange={(e) => handleSetStatus(report.id, e.target.value as SafetyConcernStatus)}
+                          className="px-2 py-1 rounded-lg border border-slate-200 dark:border-[#1E293B] bg-white dark:bg-[#0B0F19] text-xs"
                         >
-                          <Check className="w-3.5 h-3.5" />
-                          <span>Mark Resolved</span>
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => handleSetStatus(report.id, "Unverified")}
-                          className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-[#0B0F19] text-slate-600 dark:text-slate-300 hover:bg-slate-200 font-semibold text-xs flex items-center gap-1 transition-colors"
-                          title="Flag concern as still present"
-                        >
-                          <RotateCcw className="w-3 h-3" />
-                          <span>Reopen</span>
-                        </button>
-                      )}
+                          <option value="Unverified">Reported</option>
+                          <option value="Verified">Under Review</option>
+                          <option value="In Progress">In Progress</option>
+                          <option value="Resolved">Resolved</option>
+                        </select>
+                      </div>
+                    )}
                     </div>
                   </div>
                 </Card>
