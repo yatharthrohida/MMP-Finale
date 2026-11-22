@@ -57,6 +57,8 @@ model User {
   notifications           Notification[]
   notificationPreference  NotificationPreference?
   filedReports            Report[]                 @relation("Reporter")
+  communityIssues          CommunityIssueReport[]  @relation("CommunityIssueAuthor")
+  issueVerifications       CommunityIssueVerification[]
   conversationMemberships ConversationMember[]
 
   @@index([role])
@@ -344,4 +346,39 @@ model Report {
   @@index([status])
   @@index([targetType, targetId])
   @@index([createdAt])
+}
+
+
+ // ─── Community civic issue reporting (separate from content moderation) ──────
+model CommunityIssueReport {
+  id                 String   @id @default(uuid())
+  reporterId         String
+  reporter           User     @relation("CommunityIssueAuthor", fields: [reporterId], references: [id], onDelete: Cascade)
+  category           String
+  description        String
+  locationName       String
+  longitude          Float
+  latitude           Float
+  imageUrl           String?
+  status             String   @default("UNVERIFIED") // UNVERIFIED, VERIFIED, IN_PROGRESS, RESOLVED
+  verificationCount Int      @default(0)
+  verifications      CommunityIssueVerification[]
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([status, createdAt])
+  @@index([category, status])
+  @@index([reporterId])
+}
+
+model CommunityIssueVerification {
+  id        String   @id @default(uuid())
+  issueId   String
+  issue     CommunityIssueReport @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([issueId, userId])
+  @@index([userId])
 }
