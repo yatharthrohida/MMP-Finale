@@ -25,6 +25,15 @@ setWorkerUrl(
   ).toString(),
 );
 
+function escapePopupText(value: string): string {
+  return value.replace(/[&<>"']/g, (character) => {
+    const entities: Record<string, string> = {
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+    };
+    return entities[character];
+  });
+}
+
 interface SafeRouteMapProps {
   reports: SafetyConcernReport[];
   selectedReportId?: string | null;
@@ -172,8 +181,8 @@ export default function SafeRouteMap({
 
       const popup = new maplibregl.Popup({ offset: 15, closeButton: false }).setHTML(`
         <div style="font-family: inherit; font-size: 11px; padding: 2px;">
-          <div style="font-weight: bold; color: #0F172A;">${report.category}</div>
-          <div style="color: #64748B; margin-top: 2px;">${report.locationName}</div>
+          <div style="font-weight: bold; color: #0F172A;">${escapePopupText(report.category)}</div>
+          <div style="color: #64748B; margin-top: 2px;">${escapePopupText(report.locationName)}</div>
           <div style="margin-top: 4px; font-weight: 600; color: ${
             isResolved ? "#059669" : isVerified ? "#DC2626" : "#D97706"
           };">${report.status}</div>
